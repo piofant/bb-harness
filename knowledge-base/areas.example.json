@@ -1,0 +1,18 @@
+{
+  "product": {
+    "description": "основной продукт: сценарии, пользователи, метрики, релизы, команда и роли",
+    "rules": [["релиз|release", 2], ["метрик|metric", 2], ["онбординг|onboarding", 2]]
+  },
+  "tools": {
+    "description": "рабочие инструменты и сервисы: трекер задач, вики, репозитории, их API и грабли",
+    "rules": [["трекер|tracker|jira|linear", 3], ["тикет|ticket|issue", 2], ["вики|\\bwiki\\b|notion", 2]]
+  },
+  "infra": {
+    "description": "серверы и доставка: VPS, рабочие машины, bb, деплой, systemd, бэкапы, сеть",
+    "rules": [["деплой|deploy|выкат", 2], ["systemctl|systemd|journalctl", 2], ["бэкап|backup", 3]]
+  },
+  "agents": {
+    "description": "как работают сами агенты: Claude Code, Codex, Gemini, скиллы, пайплайны, память агентов",
+    "rules": [["claude|codex|gemini", 2], ["скилл|skill", 2], ["хук|hook", 2]]
+  }
+}

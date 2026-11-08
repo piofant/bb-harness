@@ -1,0 +1,22 @@
+---
+name: telegram-projects
+description: "Operate the BB Telegram bridge: project topics, connected chats, voice and Lane Pilot task notifications."
+---
+
+# Telegram Projects
+
+Use `bb telegram-projects status --json` and `chat-status --json` for diagnostics. `sync` reconciles project topics and Lane Pilot tasks; `menu <project-id>` sends the chat menu to that project's main topic. `test <project-id>` sends a labelled task-notification test. `bind <project-id|sms|navigation> <topic-id>` repairs a main topic after verifying its identity. `chat-forget <topic-id>` removes only its conversation binding, preserving history. With layout single and `pinnedChat`, `chat-pin <thread-id>` pins the bot chat to one BB thread (prefer a thread in the project checkout: an archive never tears it down); `chat-status` lists pin changes in `pinEvents`.
+
+The owner's Telegram menu supports /project, /projects, /menu, /chats, /new, /model, /section, /history, /stop, /disconnect and /tasks. Additional Telegram topics bind through /project. A new session starts on its first text/voice message; existing sessions connect explicitly and remain visible in BB. Only bound threads and Lane Pilot tasks are observed. Do not attach unrelated or hidden chats automatically.
+
+Settings chatEnabled and richReplies control conversations and native Rich Messages. Incoming text/voice uses the existing owner-only companion, a durable local spool, and BB SDK. It is the only Telegram poller: never start another getUpdates/webhook receiver with the token. Voice uses BB system.transcribeVoice; do not request separate credentials. Photos and files (up to 20 MB, Telegram's bot limit) are downloaded by the plugin, uploaded with `projects.attachments.upload` and sent as `localImage`/`localFile` parts; an album goes as one message. For a bigger file ask the owner for a link or an upload in BB. Questions depend on provider support; complex forms link to BB.
+
+The bot token lives in plugin secrets or Env Catalog. Keep plugin storage on updates. Unknown mutation outcomes must be checked, not automatically replayed. Read README.md and docs/usage.md in the source repository for limits and recovery. Never print token values or private message queues.
+
+Version 0.3 adds settings directly in the Telegram nav panel: language ru/en, delivery/chat flags, public BB URL, read-only BotFather diagnosis and same-bot token rotation. Never return credentials. getMe exposes has_topics_enabled and allows_users_to_create_topics; Restrict bot usage needs manual inspection. Do not enable Bot Management/Bot-to-Bot for BB-internal agent communication. Language changes new service text and menus, not user content.
+
+Version 0.3.1 wakes BB on durable spool changes; timed polling is recovery only. Menu callbacks edit the clicked card; ordinary messages and answers stay separate. The receiver uses grammY long polling and silent callback acknowledgement. Rich inline button layouts remain research, not an enabled feature.
+
+Version 0.4 adds optional CLI Agents catalog/select RPC after model selection for new sessions. Selection is target-scoped and revalidated at spawn; marker appears only in the initial prompt. No global CLI config changes. Provider/section changes clear the profile. Existing sessions keep their native role. Section profiles require an already registered matching environment.
+
+Use `/server` before choosing a model to select the new chat host. The project needs a source on that host. `/profile` opens native profiles; empty catalogs show a default-agent explanation. Existing chats keep their host.

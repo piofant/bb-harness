@@ -1,0 +1,19 @@
+[Unit]
+Description=Agent knowledge base: EXPERIMENT nightly harvest (session summaries -> kb note), off unless state/harvest.on
+Documentation=file://%h/agent-knowledge/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h
+UMask=0077
+# поправь пути под себя: корень базы (KB_ROOT), HOME пользователя и где лежат kb и claude
+Environment=KB_ROOT=/opt/agent-knowledge
+Environment=HOME=/home/agent
+Environment=PATH=/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=KB_HINT=0
+# без state/harvest.on команда пишет статус disabled и выходит; заметки — тот же гейт и дедуп, что kb note
+ExecStart=/opt/agent-knowledge/tools/kb harvest

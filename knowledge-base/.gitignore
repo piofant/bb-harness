@@ -1,0 +1,11 @@
+# состояние — локально, кроме health.json (история смен статуса)
+state/*
+!state/.gitkeep
+!state/health.json
+# карантин гейта секретов и приватные карточки — никогда в git
+raw/.quarantine/
+cards/private/
+.incoming/
+*.kbtmp
+__pycache__/
+.pytest_cache/

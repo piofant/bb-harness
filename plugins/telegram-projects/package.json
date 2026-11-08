@@ -1,0 +1,77 @@
+{
+  "name": "bb-plugin-telegram-projects",
+  "version": "0.12.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.43",
+    "bbPluginSdk": ">=0.4.87"
+  },
+  "bb": {
+    "name": "Telegram Projects",
+    "description": "BB projects as Telegram topics: agent reports and summaries, Lane Pilot task events, and chat with BB threads by text, voice, photos and files.",
+    "branding": {
+      "icon": "MessageSquare"
+    },
+    "server": "./server.ts",
+    "app": "./app.tsx"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.4.87",
+    "@pierre/diffs": "^1.2.9",
+    "@radix-ui/react-alert-dialog": "^1.1.19",
+    "@radix-ui/react-context-menu": "^2.3.3",
+    "@radix-ui/react-dialog": "^1.1.19",
+    "@radix-ui/react-dropdown-menu": "^2.1.20",
+    "@radix-ui/react-hover-card": "^1.1.19",
+    "@radix-ui/react-menubar": "^1.1.20",
+    "@radix-ui/react-navigation-menu": "^1.2.18",
+    "@radix-ui/react-popover": "^1.1.19",
+    "@radix-ui/react-select": "^2.3.3",
+    "@radix-ui/react-tooltip": "^1.2.12",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "better-sqlite3": "^12.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cron-parser": "^5.5.0",
+    "hono": "^4.11.9",
+    "sonner": "^1.7.4",
+    "tailwind-merge": "^3.4.0",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.0",
+    "vaul": "^1.1.2"
+  },
+  "description": "Work with BB agents from Telegram: per-project topics, agent reports and summaries, Lane Pilot task events, and chat with any BB thread by text, voice, photos and files.",
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "telegram",
+    "telegram-bot",
+    "notifications",
+    "agent-reports",
+    "tasks",
+    "voice-input",
+    "remote-control",
+    "mobile"
+  ],
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "build": "bb plugin build"
+  },
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VKirill/bb-plugin-telegram-projects.git"
+  },
+  "homepage": "https://github.com/VKirill/bb-plugin-telegram-projects#readme",
+  "bugs": {
+    "url": "https://github.com/VKirill/bb-plugin-telegram-projects/issues"
+  }
+}

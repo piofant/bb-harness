@@ -1,0 +1,9 @@
+[Unit]
+Description=Agent knowledge base: EXPERIMENT nightly harvest before kb daily (06:00 UTC); not installed by default
+
+[Timer]
+OnCalendar=*-*-* 05:15:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

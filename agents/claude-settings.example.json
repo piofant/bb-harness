@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/agent-knowledge/tools/hooks/kb_hint.py --root ~/agent-knowledge --log ~/agent-knowledge/state/kb-hint.jsonl"
+          }
+        ]
+      }
+    ]
+  }
+}

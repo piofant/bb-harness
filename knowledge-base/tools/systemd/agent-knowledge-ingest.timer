@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent knowledge base hourly ingest
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

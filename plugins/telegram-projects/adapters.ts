@@ -1,0 +1,297 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { z } from "zod";
+import {
+  TELEGRAM_FILE_LIMIT,
+  TelegramFailure,
+  type Task,
+  type TaskStatus,
+  type Telegram,
+} from "./model";
+const exec = promisify(execFile);
+export type TokenSource = () => Promise<string>;
+export function telegram(
+  token: TokenSource,
+  signal: AbortSignal,
+  timeoutMs = 15_000,
+  /** The paired owner's private chat; every chat method targets it. */
+  owner: () => number | undefined = () => undefined,
+): Telegram {
+  return async <T>(
+    method: string,
+    body: Record<string, unknown>,
+  ): Promise<T> => {
+    const secret = await token();
+    let r: Response;
+    try {
+      r = await fetch(`https://api.telegram.org/bot${secret}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...Object.fromEntries(Object.entries(body).filter(([key]) => key !== "strangerChatId")),
+          ...(typeof body.strangerChatId === "number" ? { chat_id: body.strangerChatId } : method === "getMe" ||
+          method === "getUpdates" ||
+          method === "setMyCommands" ||
+          method === "setMyDescription" ||
+          method === "setMyShortDescription"
+            ? {}
+            : { chat_id: owner() }),
+        }),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+      });
+    } catch {
+      throw new TelegramFailure("telegram_network", 30, true);
+    }
+    let data: any;
+    try {
+      data = await r.json();
+    } catch {
+      throw new TelegramFailure("telegram_invalid_response", 30, true);
+    }
+    if (!data.ok) {
+      const d = String(data.description ?? "");
+      if (
+        d.includes("TOPIC_NOT_MODIFIED") ||
+        d.includes("message is not modified")
+      )
+        return true as T;
+      const code =
+        d.includes("TOPIC_ID_INVALID") || d.includes("message thread not found")
+          ? "topic_missing"
+          : d.includes("file is too big")
+            ? "file_too_large"
+            : `telegram_${data.error_code ?? r.status}`;
+      throw new TelegramFailure(
+        code,
+        Number(data.parameters?.retry_after) || 30,
+        r.status >= 500,
+      );
+    }
+    return data.result as T;
+  };
+}
+// Env Catalog prints the stored value; the trailing newline is not part of it.
+export async function readEnvToken(
+  binary: string,
+  baseUrl: string,
+  name: string,
+  signal: AbortSignal,
+): Promise<string> {
+  try {
+    const env: NodeJS.ProcessEnv = { ...process.env, BB_SERVER_URL: baseUrl };
+    const r = await exec(binary, ["env-catalog", "get", name, "--raw"], {
+      env,
+      timeout: 15_000,
+      signal,
+    });
+    return r.stdout.trim();
+  } catch {
+    return "";
+  }
+}
+// The first bot seen is remembered; a token of another bot is refused afterwards,
+// because topics and bindings belong to the bot that created them.
+export async function checkBot(tg: Telegram, expected?: number) {
+  const me = await tg("getMe", {});
+  if (expected && me.id !== expected) throw new Error("unexpected_bot_identity");
+  return {
+    id: Number(me.id),
+    username: String(me.username),
+    topics: me.has_topics_enabled === true,
+  };
+}
+export type LaneRpc = (method: string, input: unknown) => Promise<unknown>;
+const runsPageSchema = z.object({
+  runs: z.array(
+    z
+      .object({
+        id: z.string(),
+        state: z.string(),
+        updated_at: z.number(),
+        pmThread: z.object({ id: z.string() }).passthrough().nullable().optional(),
+        attempts: z.array(
+          z
+            .object({
+              id: z.string(),
+              state: z.string(),
+              attempt_no: z.number(),
+              task_id: z.string(),
+              reason: z.string().nullable(),
+            })
+            .passthrough(),
+        ),
+      })
+      .passthrough(),
+  ),
+});
+const runCardSchema = z
+  .object({ tasks: z.array(z.object({ id: z.string(), title: z.string() }).passthrough()) })
+  .passthrough()
+  .nullable();
+// An attempt that is still working or being retried counts as in progress; only "queued" is waiting.
+export function statusOf(attemptState: string): TaskStatus {
+  if (attemptState === "accepted") return "done";
+  if (attemptState === "canceled") return "canceled";
+  if (attemptState === "blocked") return "blocked";
+  return attemptState === "queued" ? "todo" : "in_progress";
+}
+/**
+ * Reads a project's Lane Pilot tasks over the plugin RPC: `list_runs` for the newest and every open run
+ * (task = its latest attempt), `get_run_card` for task titles, which never change and are cached.
+ */
+export function lanePilotReader(rpc: LaneRpc, pageSize = 10, now = () => Date.now()) {
+  const titles = new Map<string, string>();
+  return async function read(projectId: string): Promise<Task[]> {
+    const { runs } = runsPageSchema.parse(
+      await rpc("list_runs", { projectId, offset: 0, limit: pageSize, pinOpen: true }),
+    );
+    const tasks: Task[] = [];
+    for (const run of runs) {
+      const latest = new Map<string, (typeof run.attempts)[number]>();
+      for (const a of run.attempts) {
+        const seen = latest.get(a.task_id);
+        if (!seen || a.attempt_no >= seen.attempt_no) latest.set(a.task_id, a);
+      }
+      // A finished run cannot gain titles it did not need an hour ago.
+      const live = !["closed", "accepted"].includes(run.state) || run.updated_at > now() - 3_600_000;
+      if (live && [...latest.keys()].some((id) => !titles.has(run.id + ":" + id)))
+        try {
+          const card = runCardSchema.parse(await rpc("get_run_card", { runId: run.id }));
+          for (const t of card?.tasks ?? []) titles.set(run.id + ":" + t.id, t.title);
+        } catch {
+          // Without a card the task id is the title.
+        }
+      for (const [id, a] of latest)
+        tasks.push({
+          id,
+          runId: run.id,
+          title: titles.get(run.id + ":" + id) ?? id,
+          status: statusOf(a.state),
+          attemptId: a.id,
+          reason: a.state === "blocked" ? (a.reason ?? "").slice(0, 300) || null : null,
+          runUpdatedAt: run.updated_at,
+          pmThreadId: run.pmThread?.id ?? null,
+        });
+    }
+    if (titles.size > 5000) titles.clear();
+    return tasks;
+  };
+}
+
+const phaseListSchema = z.array(
+  z
+    .object({
+      id: z.string(),
+      title: z.string(),
+      stage: z.string(),
+      state: z.string(),
+      pmThreadId: z.string().nullable().optional(),
+      record: z
+        .object({
+          questions: z.array(z.object({ id: z.string(), text: z.string(), blocking: z.boolean().optional(), answer: z.string().optional() }).passthrough()).optional(),
+        })
+        .passthrough()
+        .optional(),
+      next: z.object({ text: z.string(), waitsForPm: z.boolean().optional(), key: z.string().optional() }).passthrough().optional(),
+    })
+    .passthrough(),
+);
+/** A phase as the bridge keeps it: its stage and state, its open questions, and the turn that waits for the owner's word. */
+export type PhaseSnap = { id: string; title: string; stage: string; state: string; pmThreadId: string | null; next: string; word: string | null; questions: Array<{ id: string; text: string }> };
+/** Reads a project's Lane Pilot phases over the plugin RPC (`phase_list`). */
+export function lanePhaseReader(rpc: LaneRpc) {
+  return async function read(projectId: string): Promise<PhaseSnap[]> {
+    const phases = phaseListSchema.parse(await rpc("phase_list", { projectId }));
+    return phases.map((phase) => ({
+      id: phase.id, title: phase.title, stage: phase.stage, state: phase.state, pmThreadId: phase.pmThreadId ?? null, next: phase.next?.text ?? "",
+      // The turn that waits for the owner's word: the driver's instruction key ends with :word:<turn>[:<wave>].
+      word: phase.next?.key?.match(/:word:([a-z]+(?::\d+)?)$/)?.[1] ?? null,
+      questions: (phase.record?.questions ?? []).filter((q) => !q.answer).map((q) => ({ id: q.id, text: q.text })),
+    }));
+  };
+}
+
+/**
+ * Downloads a file the owner sent the bot, up to `limit` bytes. Errors: file_too_large (over the limit, or
+ * Telegram refuses it as too big), file_invalid (an unexpected file path), file_download_failed.
+ */
+export async function downloadTelegramFile(
+  token: TokenSource,
+  fileId: string,
+  signal: AbortSignal,
+  limit = TELEGRAM_FILE_LIMIT,
+  timeoutMs = 120_000,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const file = await telegram(token, signal)("getFile", {
+    file_id: fileId,
+  }).catch((e) => {
+    throw Error(
+      e instanceof TelegramFailure && e.code === "file_too_large"
+        ? "file_too_large"
+        : "file_download_failed",
+    );
+  });
+  if (
+    typeof file.file_path !== "string" ||
+    !/^[a-zA-Z0-9_/.\-]+$/.test(file.file_path) ||
+    file.file_path.includes("..")
+  )
+    throw Error("file_invalid");
+  if (Number(file.file_size) > limit) throw Error("file_too_large");
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+  const response = await fetch(
+    `https://api.telegram.org/file/bot${await token()}/${file.file_path}`,
+    { signal: deadline },
+  ).catch(() => {
+    throw Error("file_download_failed");
+  });
+  if (!response.ok || !response.body) throw Error("file_download_failed");
+  if (Number(response.headers.get("content-length")) > limit) {
+    await response.body.cancel().catch(() => {});
+    throw Error("file_too_large");
+  }
+  const reader = response.body.getReader();
+  let length = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.length;
+      if (length > limit) {
+        await reader.cancel().catch(() => {});
+        throw Error("file_too_large");
+      }
+      chunks.push(value);
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message === "file_too_large") throw e;
+    throw Error("file_download_failed");
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function transcribeTelegramVoice(
+  token: TokenSource,
+  sdk: import("@get-bb/plugin-sdk").BbPluginApi["sdk"],
+  voice: { fileId: string; mime: string; size: number; duration: number },
+  signal: AbortSignal,
+): Promise<string> {
+  if (voice.size > 15_000_000 || voice.duration > 600)
+    throw Error("voice_too_large");
+  const bytes = await downloadTelegramFile(
+    token,
+    voice.fileId,
+    signal,
+    15_000_000,
+    30_000,
+  );
+  const result = await sdk.system.transcribeVoice({
+    file: new Blob([bytes], { type: voice.mime }),
+    signal,
+  });
+  const text = (result as { text?: string }).text;
+  if (!text?.trim() || text.length > 16000)
+    throw Error("voice_transcription_empty");
+  return text;
+}

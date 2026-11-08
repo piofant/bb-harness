@@ -1,0 +1,19 @@
+[Unit]
+Description=Agent knowledge base: hourly ingest -> index -> health
+Documentation=file://%h/agent-knowledge/README.md
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30min
+UMask=0077
+# поправь пути под себя: корень базы (KB_ROOT), HOME пользователя и где лежат kb и claude
+Environment=KB_ROOT=/opt/agent-knowledge
+Environment=HOME=/home/agent
+Environment=PATH=/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=KB_HINT=0
+ExecStart=/opt/agent-knowledge/tools/kb ingest all
+ExecStartPost=/opt/agent-knowledge/tools/kb index
+# health — всегда, даже если ingest упал
+ExecStopPost=/opt/agent-knowledge/tools/kb health --quiet

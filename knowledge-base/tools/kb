@@ -1,0 +1,4 @@
+#!/bin/sh
+# kb — запускатель CLI базы знаний: положи ссылку в PATH (ln -s "$PWD/tools/kb" ~/.local/bin/kb).
+# Корень базы — KB_ROOT (по умолчанию ~/agent-knowledge).
+exec python3 "$(dirname "$(readlink -f "$0")")/kb.py" "$@"
