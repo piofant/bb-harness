@@ -1,0 +1,4 @@
+{
+  "main": ["code-review", "pdf", "mac-bridge", "internal-tracker"],
+  "mac_only": ["internal-tracker"]
+}

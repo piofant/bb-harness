@@ -16,9 +16,9 @@ const INSTALLED_REAL_BINARY = ${JSON.stringify(opts.realBinaryPath)};
 
 process.removeAllListeners("warning");
 
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const { DatabaseSync } = require("node:sqlite");
-const { existsSync, realpathSync } = require("node:fs");
+const { existsSync, readFileSync, realpathSync } = require("node:fs");
 const { constants: { signals } } = require("node:os");
 const { homedir } = require("node:os");
 const { dirname, join } = require("node:path");
@@ -176,6 +176,91 @@ function signalNumber(signal) {
   return typeof signals[signal] === "number" ? signals[signal] : 1;
 }
 
+// UserPromptSubmit hooks, same contract as Claude Code and Codex: JSON {hook_event_name,
+// prompt, session_id} on stdin, {hookSpecificOutput: {additionalContext}} on stdout. The
+// Antigravity SDK ignores context injection from its own hooks.json, so the proxy appends
+// the context to session/prompt itself. Config: <GEMINI_HOME>/config/prompt_hooks.json,
+// {"UserPromptSubmit": [{"command": "...", "timeout": 3}]}. Any failure forwards the prompt as is.
+const SYSTEM_OPEN = "<system_instructions>";
+const HOOKS_BUDGET_MS = 5000; // all hooks together; the proxy is blocked while they run
+const HOOK_CONTEXT_MAX = 10000; // characters, like Claude Code's cap on additionalContext
+const SYSTEM_CLOSE = "</system_instructions>";
+
+function loadPromptHooks(path) {
+  let config;
+  try {
+    config = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return [];
+  }
+  const hooks = Array.isArray(config?.UserPromptSubmit) ? config.UserPromptSubmit : [];
+  return hooks.filter((hook) => hook && typeof hook.command === "string" && hook.command.trim());
+}
+
+function promptText(prompt) {
+  let text = prompt
+    .filter((block) => block && block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join("\\n");
+  // bb prepends its own instructions to the user's message.
+  if (text.trimStart().startsWith(SYSTEM_OPEN)) {
+    const end = text.indexOf(SYSTEM_CLOSE);
+    if (end >= 0) text = text.slice(end + SYSTEM_CLOSE.length);
+  }
+  return text.trim();
+}
+
+function runPromptHook(hook, input, remainingMs) {
+  const seconds = Math.min(Math.max(Number(hook.timeout) || 3, 0.1), 10, remainingMs / 1000);
+  const shell = process.platform === "win32" ? ["cmd", ["/c", hook.command]] : ["/bin/sh", ["-c", hook.command]];
+  const result = spawnSync(shell[0], shell[1], {
+    input,
+    encoding: "utf8",
+    timeout: seconds * 1000,
+    killSignal: "SIGKILL",
+    maxBuffer: 1 << 20,
+    stdio: ["pipe", "pipe", "ignore"],
+  });
+  // A hook that leaves a background child holds stdout open past the timeout; its answer still counts.
+  if (result.status !== 0 || !result.stdout?.trim()) return null;
+  let output;
+  try {
+    output = JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
+  const context = output?.hookSpecificOutput?.additionalContext;
+  return typeof context === "string" && context.trim() ? context.trim() : null;
+}
+
+// Returns the rewritten session/prompt line, or null to forward the original untouched.
+function withPromptHookContext(msg, hooksPath) {
+  const hooks = loadPromptHooks(hooksPath);
+  if (hooks.length === 0) return null;
+  const text = promptText(msg.params.prompt);
+  if (!text) return null;
+  const input = JSON.stringify({
+    hook_event_name: "UserPromptSubmit",
+    prompt: text,
+    session_id: process.env.BB_THREAD_ID || msg.params.sessionId || "",
+    cwd: process.cwd(),
+  });
+  const deadline = Date.now() + HOOKS_BUDGET_MS;
+  const contexts = [];
+  for (const hook of hooks) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs < 100) break;
+    const context = runPromptHook(hook, input, remainingMs);
+    if (context) contexts.push(context);
+  }
+  if (contexts.length === 0) return null;
+  const joined = contexts.join("\\n\\n").slice(0, HOOK_CONTEXT_MAX);
+  // Tagged so the model can tell injected context from the user's own words.
+  const block = \`<hook_context source="UserPromptSubmit">\\n\${joined}\\n</hook_context>\`;
+  msg.params.prompt = [...msg.params.prompt, { type: "text", text: block }];
+  return JSON.stringify(msg);
+}
+
 function main() {
   const realBin = resolveRealBinary();
   const child = spawn(realBin, process.argv.slice(2), {
@@ -188,6 +273,7 @@ function main() {
   const outQueue = [];
   const outputDrainWaiters = [];
   const geminiHome = process.env.GEMINI_HOME || join(homedir(), ".gemini");
+  const promptHooksPath = join(geminiHome, "config", "prompt_hooks.json");
   let acceptingClientInput = true;
   let extractionErrorLogged = false;
   let rlOutClosed = false;
@@ -323,6 +409,13 @@ function main() {
     if (line.trim()) {
       try {
         const msg = JSON.parse(line);
+        if (msg?.method === "session/prompt" && Array.isArray(msg.params?.prompt)) {
+          try {
+            line = withPromptHookContext(msg, promptHooksPath) ?? line;
+          } catch (err) {
+            logWrapperError(err);
+          }
+        }
         if (msg && msg.method !== undefined && msg.id !== undefined) {
           const trackedMethods = new Set(["session/prompt", "session/load", "session/resume"]);
           pendingClientRequests.set(msg.id, {

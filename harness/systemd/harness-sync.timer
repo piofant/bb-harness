@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh shared harness when nested skill files change
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=harness-sync.service
+
+[Install]
+WantedBy=timers.target

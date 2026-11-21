@@ -114,6 +114,33 @@ The POSIX install renders a lightweight transparent proxy wrapper as `agy_acp_se
 
 This enables BB's native context window tracking and context meter plugins (such as `context-meter`) to display live token usage for Antigravity threads.
 
+## Shared prompt hooks
+
+The POSIX wrapper also runs command hooks from
+`<GEMINI_HOME>/config/prompt_hooks.json` before `session/prompt` (`GEMINI_HOME`
+defaults to `~/.gemini`). The [shared harness](../../harness/README.md) syncs
+Codex `UserPromptSubmit` hooks into this file. Antigravity's own hook context
+insertion was ignored by its ACP SDK in the tested version; the wrapper adds
+`hookSpecificOutput.additionalContext` as a separate
+`<hook_context source="UserPromptSubmit">` block.
+
+Hooks receive JSON on stdin with `hook_event_name`, the prompt text without
+bb's leading system instructions, `session_id` and `cwd`. All hooks share a
+five-second budget and their combined context is capped at 10,000 characters.
+Empty, failed or malformed hook output leaves the original prompt unchanged.
+The wrapper accepts valid output from a successful hook even if a background
+child keeps stdout open until the timeout. Hooks run synchronously, so they
+can delay forwarding for the duration of the budget; background descendants
+are not guaranteed to be terminated. Use short commands without background
+jobs. This is context injection, not an approval hook: hook output does not
+block a prompt or authorize tools.
+
+The hooks file grants command execution with the wrapper's user permissions.
+Treat it as trusted configuration, just like MCP server commands. Reinstall
+the ACP server wrapper after updating this plugin to enable the hooks; a
+plugin reload alone does not replace an already installed wrapper. Windows
+currently launches the raw binary and does not run these prompt hooks.
+
 ## Security notes
 
 - The ACP registry is fetched from a **pinned commit** (`REGISTRY_COMMIT`),

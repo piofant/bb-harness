@@ -1,0 +1,7 @@
+[Unit]
+Description=Share Codex skills, MCP and prompt hooks with Gemini and Claude
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=%h/.agents/harness/.venv/bin/python %h/.agents/harness/harness_sync.py

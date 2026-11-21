@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch shared skills and Codex configuration
+
+[Path]
+PathChanged=%h/.agents/skills
+PathChanged=%h/.codex/config.toml
+PathChanged=%h/.codex/hooks.json
+PathChanged=%h/.agents/harness/main_skills.json
+PathChanged=%h/.agents/harness/gemini_skill_descriptions.json
+Unit=harness-sync.service
+
+[Install]
+WantedBy=default.target

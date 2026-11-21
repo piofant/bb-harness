@@ -1,0 +1,6 @@
+# Local policy and curated descriptions can contain personal context.
+/main_skills.json
+/gemini_skill_descriptions.json
+/logs/
+/state/
+/.venv/
