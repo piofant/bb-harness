@@ -1,0 +1,19 @@
+{
+ "areas": [
+  {"key": "work", "label": "работа", "section": "Работа", "folder": "work",
+   "aliases": ["app", "встречи", "тикеты", "карьера"]},
+  {"key": "study", "label": "учёба", "section": "Учёба", "folder": "study",
+   "aliases": ["курс", "доклад", "менторство"]},
+  {"key": "writing", "label": "тексты", "section": "Тексты", "folder": "writing",
+   "aliases": ["блог", "видео", "пост"]},
+  {"key": "bots", "label": "боты", "section": "Боты", "folder": "bots",
+   "aliases": ["бот", "канал"]},
+  {"key": "infra", "label": "сервер", "section": "Сервер", "folder": "infra",
+   "aliases": ["инфра", "bb", "скиллы", "база знаний"]},
+  {"key": "life", "label": "личное", "section": "Личное", "folder": "life",
+   "aliases": ["быт", "финансы", "кино"]},
+  {"key": "diary", "label": "дневник", "section": "Дневник", "auto": true, "folder": "diary",
+   "aliases": ["журнал", "рефлексия"]},
+  {"key": "misc", "label": "прочее", "section": "Прочее", "folder": "misc", "aliases": []}
+ ]
+}
